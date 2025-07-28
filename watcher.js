@@ -22,10 +22,10 @@ function log(msg) {
   console.log(`[${new Date().toISOString()}] ${msg}`);
 }
 
-// ✅ Giải mã AES-128-CBC
+// ✅ Giải mã AES-192-CBC
 function decryptAES(encryptedBase64, keyBuffer, ivBuffer) {
   const encrypted = Buffer.from(encryptedBase64, "base64");
-  const decipher = crypto.createDecipheriv("aes-128-cbc", keyBuffer, ivBuffer);
+  const decipher = crypto.createDecipheriv("aes-192-cbc", keyBuffer, ivBuffer);
   let decrypted = decipher.update(encrypted);
   decrypted = Buffer.concat([decrypted, decipher.final()]);
   return decrypted.toString("utf8");
@@ -49,18 +49,18 @@ async function refWatcher() {
         return;
       }
 
-      // ❗ Sai giống Unity: convert chuỗi base64 thành UTF-8 bytes
-      const keyBuffer = Buffer.from(encData.key, "utf8");
-      const ivBuffer = Buffer.from(encData.iv, "utf8");
+      // ✅ Giải mã base64 để lấy đúng số byte
+      const keyBuffer = Buffer.from(encData.key, "base64");
+      const ivBuffer = Buffer.from(encData.iv, "base64");
 
-      if (keyBuffer.length !== 16 || ivBuffer.length !== 16) {
-        log(`❌ Key hoặc IV không đúng 16 byte cho AES-128.`);
+      if (keyBuffer.length !== 24 || ivBuffer.length !== 16) {
+        log(`❌ Key hoặc IV không đúng kích thước cho AES-192.`);
         log(`Key bytes: ${keyBuffer.length}`);
         log(`IV bytes : ${ivBuffer.length}`);
         return;
       }
 
-      log("✅ AES key và IV đã load.");
+      log("✅ AES-192 key và IV đã load.");
       log(`Key: ${keyBuffer.toString("hex")}`);
       log(`IV: ${ivBuffer.toString("hex")}`);
 
