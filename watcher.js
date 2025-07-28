@@ -74,7 +74,7 @@ function decryptAES(encryptedText, base64Key, base64IV) {
   const iv = Buffer.from(base64IV, "base64");
   const encrypted = Buffer.from(encryptedText, "base64");
 
-  const decipher = crypto.createDecipheriv("aes-256-cbc", key, iv);
+  const decipher = crypto.createDecipheriv("aes-192-cbc", key, iv);
   let decrypted = decipher.update(encrypted);
   decrypted = Buffer.concat([decrypted, decipher.final()]);
 
