@@ -5,7 +5,7 @@ const express = require("express");
 const app = express();
 const port = 10000;
 
-const serviceAccount = require("./serviceAccountKey.json");
+const serviceAccount = require("/etc/secrets/gamestartchung2-firebase-adminsdk-q6v48-ea43bfa520.json");
 
 admin.initializeApp({
   credential: admin.credential.cert(serviceAccount),
