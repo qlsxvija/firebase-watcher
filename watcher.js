@@ -14,29 +14,23 @@ admin.initializeApp({
 
 const db = admin.database();
 
-// Cấu hình các đường dẫn node
-const MAIN_NODE = "StartConGa";  // ✅ Đổi sang StartConGa
+const MAIN_NODE = "StartConGa";
 const ENCKEY_NODE = "ENCKEY";
 const SET_CONTENT_PATH = `${MAIN_NODE}/SetRuContent`;
 
-// Hàm log có timestamp
 function log(msg) {
   console.log(`[${new Date().toISOString()}] ${msg}`);
 }
 
-// Hàm giải mã AES
-function decryptAES(encryptedBase64, keyHex, ivHex) {
-  const key = Buffer.from(keyHex, "hex");
-  const iv = Buffer.from(ivHex, "hex");
+// ✅ DÙNG AES-128-CBC
+function decryptAES(encryptedBase64, keyBuffer, ivBuffer) {
   const encrypted = Buffer.from(encryptedBase64, "base64");
-
-  const decipher = crypto.createDecipheriv("aes-192-cbc", key, iv);
+  const decipher = crypto.createDecipheriv("aes-128-cbc", keyBuffer, ivBuffer);
   let decrypted = decipher.update(encrypted);
   decrypted = Buffer.concat([decrypted, decipher.final()]);
   return decrypted.toString("utf8");
 }
 
-// Theo dõi dữ liệu
 async function refWatcher() {
   const ref = db.ref(SET_CONTENT_PATH);
   ref.on("value", async (snapshot) => {
@@ -55,32 +49,38 @@ async function refWatcher() {
         return;
       }
 
-      const keyHex = Buffer.from(encData.key, "base64").toString("hex");
-      const ivHex = Buffer.from(encData.iv, "base64").toString("hex");
+      const keyBuffer = Buffer.from(encData.key, "base64");
+      const ivBuffer = Buffer.from(encData.iv, "base64");
+
+      if (keyBuffer.length !== 16 || ivBuffer.length !== 16) {
+        log("❌ Key hoặc IV không đúng độ dài 16 byte cho AES-128.");
+        return;
+      }
 
       log("✅ AES key và IV đã load.");
-      log(`Key: ${keyHex}`);
-      log(`IV: ${ivHex}`);
+      log(`Key: ${keyBuffer.toString("hex")}`);
+      log(`IV: ${ivBuffer.toString("hex")}`);
 
-      const decryptedStr = decryptAES(encryptedContent, keyHex, ivHex);
+      const decryptedStr = decryptAES(encryptedContent, keyBuffer, ivBuffer);
       const data = JSON.parse(decryptedStr);
 
       log("✅ Đã giải mã thành công StartConGa/SetRuContent.");
       log(data);
 
-      // Thêm xử lý điều kiện
+      // ⚠️ Kiểm tra cờ DeleteExpiredUDID
       if (data.DeleteExpiredUDID === true) {
         log("⚠️ Bật chức năng xóa UDID hết hạn...");
         // Gọi hàm xóa UDID tại đây nếu cần
+      } else {
+        log("ℹ️ Chức năng xóa UDID đang tắt.");
       }
 
     } catch (error) {
-      log(`❌ Giải mã thất bại: ${error}`);
+      log(`❌ Giải mã thất bại: ${error.message}`);
     }
   });
 }
 
-// Khởi động server
 app.get("/", (req, res) => {
   res.send("✅ Firebase Watcher is running...");
 });
