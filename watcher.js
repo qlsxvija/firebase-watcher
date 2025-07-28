@@ -5,7 +5,6 @@ const crypto = require("crypto");
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// === Firebase ===
 const serviceAccount = require("/etc/secrets/gamestartchung2-firebase-adminsdk-q6v48-ea43bfa520.json");
 
 admin.initializeApp({
@@ -21,19 +20,26 @@ const keyRef = db.ref(`${BASE_NODE}/ENCKEY`);
 let prevListIDON = "";
 let prevListIDONC = "";
 
-// === Lắng nghe thay đổi dữ liệu mã hóa ===
+let latestKey = "";
+let latestIV = "";
+let lastDecryptionError = "";
+let lastDecrypted = "";
+
+// === Theo dõi thay đổi SetRuContent ===
 ref.on("value", async (snapshot) => {
   const encrypted = snapshot.val();
   if (!encrypted) return;
 
-  // Lấy key và iv từ ENCKEY
-  const encKeySnap = await keyRef.once("value");
-  const { key, iv } = encKeySnap.val() || {};
-  if (!key || !iv) return console.error("Missing AES key or IV");
-
   try {
-    // Giải mã AES-256-CBC
+    const encKeySnap = await keyRef.once("value");
+    const { key, iv } = encKeySnap.val() || {};
+    latestKey = key || "(empty)";
+    latestIV = iv || "(empty)";
+
+    if (!key || !iv) throw new Error("Missing AES key or IV");
+
     const decrypted = decryptAES(encrypted, key, iv);
+    lastDecrypted = decrypted;
     const data = JSON.parse(decrypted);
 
     const now = Math.floor(Date.now() / 1000);
@@ -55,8 +61,10 @@ ref.on("value", async (snapshot) => {
 
     prevListIDON = currentON;
     prevListIDONC = currentONC;
+    lastDecryptionError = "";
   } catch (e) {
-    console.error("Giải mã hoặc xử lý JSON thất bại:", e.message);
+    lastDecryptionError = e.message;
+    console.error("Giải mã thất bại:", e);
   }
 });
 
@@ -79,6 +87,27 @@ function getNewIDs(current, prev) {
   return currArr.filter(id => !prevArr.includes(id));
 }
 
-// === Giữ server sống trên Render ===
-app.get("/", (req, res) => res.send("AES Watcher running"));
-app.listen(PORT, () => console.log(`Listening on ${PORT}`));
+// === Đường dẫn gốc check sống ===
+app.get("/", (req, res) => {
+  res.send("Watcher is running.");
+});
+
+// === Debug hiển thị key, iv, lỗi, json giải mã ===
+app.get("/debug", (req, res) => {
+  res.send(`
+    <h2>Firebase AES Watcher Debug</h2>
+    <pre>
+<b>KEY (base64):</b> ${latestKey}
+<b>IV  (base64):</b> ${latestIV}
+
+<b>Decryption Error:</b> ${lastDecryptionError || "None"}
+
+<b>Last Decrypted JSON:</b>
+${lastDecrypted || "(empty)"}
+    </pre>
+  `);
+});
+
+app.listen(PORT, () => {
+  console.log(`Server listening on port ${PORT}`);
+});
