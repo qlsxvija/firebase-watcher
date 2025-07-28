@@ -27,8 +27,8 @@ function decryptAESBase64(encryptedBase64, base64Key, base64IV) {
   try {
     const key = Buffer.from(base64Key, "base64");
     const iv = Buffer.from(base64IV, "base64");
-        const keyBuffer = Buffer.from("CkDw0wZfMTiLqEi7azBwuw==", "base64");
-    const ivBuffer  = Buffer.from("BDV7JMdu2i+MPrFF", "base64");
+        const keyBuffer = Buffer.from(encData.key, "base64");    // giải mã Base64 cho key
+const ivBuffer = Buffer.from(encData.iv, "utf8");  
     
     console.log("Key bytes:", keyBuffer.length);
     console.log("IV bytes :", ivBuffer.length);
