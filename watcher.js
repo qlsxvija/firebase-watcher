@@ -22,39 +22,19 @@ function log(msg) {
   console.log(`[${new Date().toISOString()}] ${msg}`);
 }
 
-// ✅ AES-128-CBC giải mã với base64 key và iv
-function decryptAESBase64(encryptedBase64, base64Key, base64IV) {
-  try {
-    const key = Buffer.from(base64Key, "base64");
-    const iv = Buffer.from(base64IV, "base64");
-        const keyBuffer = Buffer.from(encData.key, "base64");    // giải mã Base64 cho key
-const ivBuffer = Buffer.from(encData.iv, "utf8");  
-    
-    console.log("Key bytes:", keyBuffer.length);
-    console.log("IV bytes :", ivBuffer.length);
-    if (key.length !== 16 || iv.length !== 16) {
-      throw new Error("Key hoặc IV không đúng 16 byte cho AES-128.");
-    }
-
-    const encrypted = Buffer.from(encryptedBase64, "base64");
-    const decipher = crypto.createDecipheriv("aes-128-cbc", key, iv);
-
-    let decrypted = decipher.update(encrypted);
-    decrypted = Buffer.concat([decrypted, decipher.final()]);
-
-    return decrypted.toString("utf8");
-  } catch (err) {
-    log(`❌ Giải mã thất bại: ${err.message}`);
-    return null;
-  }
+// ✅ Giải mã AES-128-CBC
+function decryptAES(encryptedBase64, keyBuffer, ivBuffer) {
+  const encrypted = Buffer.from(encryptedBase64, "base64");
+  const decipher = crypto.createDecipheriv("aes-128-cbc", keyBuffer, ivBuffer);
+  let decrypted = decipher.update(encrypted);
+  decrypted = Buffer.concat([decrypted, decipher.final()]);
+  return decrypted.toString("utf8");
 }
 
 async function refWatcher() {
   const ref = db.ref(SET_CONTENT_PATH);
-
   ref.on("value", async (snapshot) => {
     const encryptedContent = snapshot.val();
-
     if (!encryptedContent || typeof encryptedContent !== "string") {
       log("❌ Không tìm thấy encrypted content.");
       return;
@@ -64,39 +44,47 @@ async function refWatcher() {
       const encSnap = await db.ref(ENCKEY_NODE).once("value");
       const encData = encSnap.val();
 
-      if (!encData?.key || !encData?.iv) {
+      if (!encData || !encData.key || !encData.iv) {
         log("❌ Thiếu key hoặc iv trong ENCKEY node.");
         return;
       }
 
+      const keyBuffer = Buffer.from(encData.key, "base64");  // ✅ Giải mã Base64
+      const ivBuffer = Buffer.from(encData.iv, "utf8");      // ✅ Chuỗi thường 16 ký tự
+
+      if (keyBuffer.length !== 16 || ivBuffer.length !== 16) {
+        log(`❌ Key hoặc IV không đúng 16 byte cho AES-128.`);
+        log(`Key bytes: ${keyBuffer.length}`);
+        log(`IV bytes : ${ivBuffer.length}`);
+        return;
+      }
+
       log("✅ AES key và IV đã load.");
-      log(`Key base64: ${encData.key}`);
-      log(`IV base64: ${encData.iv}`);
+      log(`Key: ${keyBuffer.toString("hex")}`);
+      log(`IV: ${ivBuffer.toString("hex")}`);
 
-      const decryptedStr = decryptAESBase64(encryptedContent, encData.key, encData.iv);
-      if (!decryptedStr) return;
-
+      const decryptedStr = decryptAES(encryptedContent, keyBuffer, ivBuffer);
       const data = JSON.parse(decryptedStr);
 
       log("✅ Đã giải mã thành công StartConGa/SetRuContent.");
       log(data);
 
+      // ⚠️ Kiểm tra cờ DeleteExpiredUDID
       if (data.DeleteExpiredUDID === true) {
         log("⚠️ Bật chức năng xóa UDID hết hạn...");
-        // 👉 Gọi hàm xóa tại đây nếu cần
+        // Gọi hàm xử lý tại đây nếu cần
       } else {
         log("ℹ️ Chức năng xóa UDID đang tắt.");
       }
 
     } catch (error) {
-      log(`❌ Lỗi xử lý dữ liệu: ${error.message}`);
+      log(`❌ Giải mã thất bại: ${error.message}`);
     }
   });
 }
 
-// Server HTTP đơn giản để theo dõi
 app.get("/", (req, res) => {
-  res.send("✅ Firebase AES Watcher is running...");
+  res.send("✅ Firebase Watcher is running...");
 });
 
 app.listen(port, () => {
