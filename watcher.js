@@ -49,8 +49,9 @@ async function refWatcher() {
         return;
       }
 
-      const keyBuffer = Buffer.from(encData.key, "base64");  // ✅ Giải mã Base64
-      const ivBuffer = Buffer.from(encData.iv, "utf8");      // ✅ Chuỗi thường 16 ký tự
+      // ❗ Sai giống Unity: convert chuỗi base64 thành UTF-8 bytes
+      const keyBuffer = Buffer.from(encData.key, "utf8");
+      const ivBuffer = Buffer.from(encData.iv, "utf8");
 
       if (keyBuffer.length !== 16 || ivBuffer.length !== 16) {
         log(`❌ Key hoặc IV không đúng 16 byte cho AES-128.`);
@@ -69,7 +70,6 @@ async function refWatcher() {
       log("✅ Đã giải mã thành công StartConGa/SetRuContent.");
       log(data);
 
-      // ⚠️ Kiểm tra cờ DeleteExpiredUDID
       if (data.DeleteExpiredUDID === true) {
         log("⚠️ Bật chức năng xóa UDID hết hạn...");
         // Gọi hàm xử lý tại đây nếu cần
