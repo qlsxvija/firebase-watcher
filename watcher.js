@@ -1,44 +1,54 @@
-const admin = require("firebase-admin");
-const serviceAccount = require("/etc/secrets/gamestartchung2-firebase-adminsdk-q6v48-ea43bfa520.json");
+const express = require('express');
+const admin = require('firebase-admin');
+const fs = require('fs');
 
+const app = express();
+const port = process.env.PORT || 3000;
+
+// Khởi tạo Firebase Admin SDK
+const serviceAccount = require("/etc/secrets/gamestartchung2-firebase-adminsdk-q6v48-ea43bfa520.json");
 admin.initializeApp({
   credential: admin.credential.cert(serviceAccount),
   databaseURL: "https://gamestartchung2-default-rtdb.asia-southeast1.firebasedatabase.app"
 });
 
 const db = admin.database();
-const ref = db.ref("MaiNhoBC2/SetRuContent");
+const refPath = "MaiNhoBC2/SetRuContent"; // chỉnh theo DB của bạn
 
-let prevListIDON = "";
-let prevListIDONC = "";
-
-ref.on("value", async (snapshot) => {
+// Hàm kiểm tra và xóa mã hết hạn
+async function checkExpiredCodes() {
+  const snapshot = await db.ref(refPath).once('value');
   const data = snapshot.val();
+
   if (!data) return;
 
-  const now = Math.floor(Date.now() / 1000);
-  const currentON = data.listIDON || "";
-  const currentONC = data.listIDONC || "";
+  const currentTimestamp = Date.now();
+  let list = data.listIDON.split(',');
+  let changed = false;
 
-  const newON = getNewIDs(currentON, prevListIDON);
-  const newONC = getNewIDs(currentONC, prevListIDONC);
-
-  for (const id of newON) {
-    await db.ref(`MaiNhoBC2/ActivatedTime/listIDON/${id}`).set(now);
-    console.log(`[listIDON] Added ${id} at ${now}`);
+  if (data.ActivatedTime) {
+    for (let udid in data.ActivatedTime) {
+      let createdAt = data.ActivatedTime[udid];
+      if (currentTimestamp - createdAt >= 60 * 60 * 1000) { // sau 1 giờ
+        list = list.filter(id => id !== udid);
+        delete data.ActivatedTime[udid];
+        changed = true;
+      }
+    }
   }
 
-  for (const id of newONC) {
-    await db.ref(`MaiNhoBC2/ActivatedTime/listIDONC/${id}`).set(now);
-    console.log(`[listIDONC] Added ${id} at ${now}`);
+  if (changed) {
+    data.listIDON = list.join(',');
+    await db.ref(refPath).set(data);
+    console.log("Expired UDIDs removed.");
   }
+}
 
-  prevListIDON = currentON;
-  prevListIDONC = currentONC;
+app.get('/', async (req, res) => {
+  await checkExpiredCodes();
+  res.send("Check complete.");
 });
 
-function getNewIDs(current, prev) {
-  const currArr = current.split(",").filter(Boolean);
-  const prevArr = prev.split(",").filter(Boolean);
-  return currArr.filter(id => !prevArr.includes(id));
-}
+app.listen(port, () => {
+  console.log(`Server is running on port ${port}`);
+});
