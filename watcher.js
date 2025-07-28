@@ -22,6 +22,17 @@ function log(msg) {
   console.log(`[${new Date().toISOString()}] ${msg}`);
 }
 
+// 👉 Chuẩn hóa IV: nếu thiếu thì pad \x00, nếu thừa thì cắt
+function normalizeIV(ivBuffer) {
+  if (ivBuffer.length < 16) {
+    const pad = Buffer.alloc(16 - ivBuffer.length, 0); // pad bằng null bytes
+    return Buffer.concat([ivBuffer, pad]);
+  } else if (ivBuffer.length > 16) {
+    return ivBuffer.slice(0, 16);
+  }
+  return ivBuffer;
+}
+
 // ✅ Giải mã AES-192-CBC
 function decryptAES(encryptedBase64, keyBuffer, ivBuffer) {
   const encrypted = Buffer.from(encryptedBase64, "base64");
@@ -49,20 +60,18 @@ async function refWatcher() {
         return;
       }
 
-      // ✅ Giải mã base64 để lấy đúng số byte
-      const keyBuffer = Buffer.from(encData.key, "base64");
-      const ivBuffer = Buffer.from(encData.iv, "base64");
+      const keyBuffer = Buffer.from(encData.key, "base64"); // 24 bytes cho AES-192
+      const ivRaw = Buffer.from(encData.iv, "base64");      // có thể không đủ 16 bytes
+      const ivBuffer = normalizeIV(ivRaw);
 
-      if (keyBuffer.length !== 24 || ivBuffer.length !== 16) {
-        log(`❌ Key hoặc IV không đúng kích thước cho AES-192.`);
-        log(`Key bytes: ${keyBuffer.length}`);
-        log(`IV bytes : ${ivBuffer.length}`);
+      log("✅ AES key và IV đã load.");
+      log(`Key (${keyBuffer.length} bytes): ${keyBuffer.toString("hex")}`);
+      log(`IV  (${ivBuffer.length} bytes): ${ivBuffer.toString("hex")}`);
+
+      if (keyBuffer.length !== 24) {
+        log("❌ Key không đúng độ dài 24 bytes cho AES-192.");
         return;
       }
-
-      log("✅ AES-192 key và IV đã load.");
-      log(`Key: ${keyBuffer.toString("hex")}`);
-      log(`IV: ${ivBuffer.toString("hex")}`);
 
       const decryptedStr = decryptAES(encryptedContent, keyBuffer, ivBuffer);
       const data = JSON.parse(decryptedStr);
@@ -72,7 +81,7 @@ async function refWatcher() {
 
       if (data.DeleteExpiredUDID === true) {
         log("⚠️ Bật chức năng xóa UDID hết hạn...");
-        // Gọi hàm xử lý tại đây nếu cần
+        // Xử lý tại đây nếu cần
       } else {
         log("ℹ️ Chức năng xóa UDID đang tắt.");
       }
