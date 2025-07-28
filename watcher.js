@@ -1,57 +1,39 @@
+const express = require("express");
 const admin = require("firebase-admin");
-const CryptoJS = require("crypto-js");
+const crypto = require("crypto");
 
-// Đường dẫn đến file JSON key Firebase
+const app = express();
+const PORT = process.env.PORT || 3000;
+
+// === Firebase ===
 const serviceAccount = require("/etc/secrets/gamestartchung2-firebase-adminsdk-q6v48-ea43bfa520.json");
-// ✅ Node gốc bạn muốn theo dõi → chỉ cần sửa chỗ này
-const BASE_NODE = "StartConGa";
 
 admin.initializeApp({
   credential: admin.credential.cert(serviceAccount),
-databaseURL: "https://gamestartchung2-default-rtdb.asia-southeast1.firebasedatabase.app"
+  databaseURL: "https://gamestartchung2-default-rtdb.asia-southeast1.firebasedatabase.app"
 });
 
 const db = admin.database();
-
-// Đường dẫn key và dữ liệu mã hóa
-const keyRef = db.ref(`${BASE_NODE}/ENCKEY`);
+const BASE_NODE = "StartConGa";
 const ref = db.ref(`${BASE_NODE}/SetRuContent`);
-
-let AES_KEY = null;
-let AES_IV = null;
-
-// Lắng nghe key AES từ Firebase
-keyRef.on("value", (snapshot) => {
-  const data = snapshot.val();
-  if (data?.key && data?.iv) {
-    AES_KEY = CryptoJS.enc.Utf8.parse(data.key);
-    AES_IV = CryptoJS.enc.Utf8.parse(data.iv);
-    console.log("🔐 AES key/iv loaded");
-  } else {
-    console.warn("⚠️ ENCKEY không hợp lệ");
-  }
-});
-
-// Hàm giải mã AES
-function decryptAES(ciphertext, key, iv) {
-  const bytes = CryptoJS.AES.decrypt(ciphertext, key, {
-    iv: iv,
-    mode: CryptoJS.mode.CBC,
-    padding: CryptoJS.pad.Pkcs7
-  });
-  return bytes.toString(CryptoJS.enc.Utf8);
-}
+const keyRef = db.ref(`${BASE_NODE}/ENCKEY`);
 
 let prevListIDON = "";
 let prevListIDONC = "";
 
-// Theo dõi thay đổi nội dung mã hóa
+// === Lắng nghe thay đổi dữ liệu mã hóa ===
 ref.on("value", async (snapshot) => {
   const encrypted = snapshot.val();
-  if (!encrypted || !AES_KEY || !AES_IV) return;
+  if (!encrypted) return;
+
+  // Lấy key và iv từ ENCKEY
+  const encKeySnap = await keyRef.once("value");
+  const { key, iv } = encKeySnap.val() || {};
+  if (!key || !iv) return console.error("Missing AES key or IV");
 
   try {
-    const decrypted = decryptAES(encrypted, AES_KEY, AES_IV);
+    // Giải mã AES-256-CBC
+    const decrypted = decryptAES(encrypted, key, iv);
     const data = JSON.parse(decrypted);
 
     const now = Math.floor(Date.now() / 1000);
@@ -73,13 +55,30 @@ ref.on("value", async (snapshot) => {
 
     prevListIDON = currentON;
     prevListIDONC = currentONC;
-  } catch (err) {
-    console.error("❌ Lỗi giải mã hoặc sai JSON:", err.message);
+  } catch (e) {
+    console.error("Giải mã hoặc xử lý JSON thất bại:", e.message);
   }
 });
+
+// === Giải mã AES-256-CBC ===
+function decryptAES(encryptedText, base64Key, base64IV) {
+  const key = Buffer.from(base64Key, "base64");
+  const iv = Buffer.from(base64IV, "base64");
+  const encrypted = Buffer.from(encryptedText, "base64");
+
+  const decipher = crypto.createDecipheriv("aes-256-cbc", key, iv);
+  let decrypted = decipher.update(encrypted);
+  decrypted = Buffer.concat([decrypted, decipher.final()]);
+
+  return decrypted.toString("utf8");
+}
 
 function getNewIDs(current, prev) {
   const currArr = current.split(",").filter(Boolean);
   const prevArr = prev.split(",").filter(Boolean);
   return currArr.filter(id => !prevArr.includes(id));
 }
+
+// === Giữ server sống trên Render ===
+app.get("/", (req, res) => res.send("AES Watcher running"));
+app.listen(PORT, () => console.log(`Listening on ${PORT}`));
