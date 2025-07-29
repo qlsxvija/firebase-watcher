@@ -13,16 +13,20 @@ admin.initializeApp({
 });
 
 const db = admin.database();
-
 const MAIN_NODE = "StartConGa";
 const ENCKEY_NODE = "ENCKEY";
 const SET_CONTENT_PATH = `${MAIN_NODE}/SetRuContent`;
+
+// ⚙️ Cấu hình delay xoá (dùng 10 giây test, đổi 1h khi thật)
+const DELAY_REMOVE_MS = 60 * 1000;
+
+const idTimers = new Map();
 
 function log(msg) {
   console.log(`[${new Date().toISOString()}] ${msg}`);
 }
 
-function decryptAES_NodeCrypto(encryptedBase64, keyBase64Str, ivBase64Str) {
+function decryptAES(encryptedBase64, keyBase64Str, ivBase64Str) {
   const key = Buffer.from(keyBase64Str, "utf8");
   const iv = Buffer.from(ivBase64Str, "utf8");
   const ciphertext = Buffer.from(encryptedBase64, "base64");
@@ -33,62 +37,32 @@ function decryptAES_NodeCrypto(encryptedBase64, keyBase64Str, ivBase64Str) {
   return decrypted;
 }
 
-function encryptAES_NodeCrypto(plainText, keyBase64Str, ivBase64Str) {
-  const key = Buffer.from(keyBase64Str, "utf8");
-  const iv = Buffer.from(ivBase64Str, "utf8");
+function scheduleRemove(id, field, data, delay = DELAY_REMOVE_MS) {
+  const timerKey = `${field}_${id}`;
+  if (idTimers.has(timerKey)) return;
 
-  const cipher = crypto.createCipheriv("aes-192-cbc", key, iv);
-  let encrypted = cipher.update(plainText, "utf8", "base64");
-  encrypted += cipher.final("base64");
-  return encrypted;
-}
+  const now = new Date();
+  const expiresAt = new Date(now.getTime() + delay);
 
-function parseIDList(idListStr) {
-  if (!idListStr || idListStr === "0") return [];
-  return idListStr.split(",").map((id) => id.trim()).filter((id) => id);
-}
+  log(`🕒 Phát hiện ID mới: ${id} trong ${field}`);
+  log(`   Bật lúc: ${now.toLocaleTimeString()}`);
+  log(`   Sẽ xoá lúc: ${expiresAt.toLocaleTimeString()}`);
 
-function scheduleIDRemoval(ids, field) {
-  const path = `${MAIN_NODE}/SetRuContent`;
+  const timer = setTimeout(async () => {
+    const ids = data[field]
+      .split(",")
+      .map((x) => x.trim())
+      .filter((x) => x && x !== id);
+    const updated = ids.length > 0 ? ids.join(",") : "0";
 
-  ids.forEach((id) => {
-    setTimeout(async () => {
-      try {
-        const snapshot = await db.ref(path).once("value");
-        const encryptedContent = snapshot.val();
-        if (!encryptedContent || typeof encryptedContent !== "string") return;
+    await db.ref(SET_CONTENT_PATH).child(field).set(updated);
+    log(`🗑️ Đã xóa ID ${id} khỏi ${field}`);
+    log(`🧾 JSON sau khi xóa: ${field} = ${updated}`);
 
-        const encSnap = await db.ref(ENCKEY_NODE).once("value");
-        const encData = encSnap.val();
+    idTimers.delete(timerKey);
+  }, delay);
 
-        const decryptedStr = decryptAES_NodeCrypto(
-          encryptedContent,
-          encData.key,
-          encData.iv
-        );
-        const data = JSON.parse(decryptedStr);
-
-        const currentIDs = parseIDList(data[field]);
-        if (currentIDs.includes(id)) {
-          const updatedIDsArray = currentIDs.filter((x) => x !== id);
-          data[field] = updatedIDsArray.length > 0 ? updatedIDsArray.join(",") : "0";
-
-          const newEncrypted = encryptAES_NodeCrypto(
-            JSON.stringify(data),
-            encData.key,
-            encData.iv
-          );
-
-          await db.ref(path).set(newEncrypted);
-          log(`🗑️ Đã xóa ID '${id}' khỏi ${field}`);
-          log("📤 JSON sau khi xóa ID:");
-          console.dir(data, { depth: null }); // Hiển thị toàn bộ JSON sau cập nhật
-        }
-      } catch (err) {
-        log(`❌ Lỗi khi xóa ID '${id}' khỏi ${field}: ${err.message}`);
-      }
-    }, 50 * 60 * 1000); // ⏱️ 10 giây thử nghiệm
-  });
+  idTimers.set(timerKey, timer);
 }
 
 async function refWatcher() {
@@ -103,29 +77,25 @@ async function refWatcher() {
     try {
       const encSnap = await db.ref(ENCKEY_NODE).once("value");
       const encData = encSnap.val();
-
-      if (!encData || !encData.key || !encData.iv) {
+      if (!encData?.key || !encData?.iv) {
         log("❌ Thiếu key hoặc iv trong ENCKEY node.");
         return;
       }
 
-      const decryptedStr = decryptAES_NodeCrypto(encryptedContent, encData.key, encData.iv);
+      const decryptedStr = decryptAES(encryptedContent, encData.key, encData.iv);
       const data = JSON.parse(decryptedStr);
 
       log("✅ Đã giải mã thành công.");
-      console.dir(data, { depth: null });
+      console.log(JSON.stringify(data, null, 2));
 
-      const idsToRemoveON = parseIDList(data.listIDON);
-      const idsToRemoveONC = parseIDList(data.listIDONC);
-
-      if (idsToRemoveON.length > 0) {
-        log(`🕐 Bắt đầu hẹn giờ xóa ID từ listIDON sau 10 giây: ${idsToRemoveON.join(", ")}`);
-        scheduleIDRemoval(idsToRemoveON, "listIDON");
-      }
-
-      if (idsToRemoveONC.length > 0) {
-        log(`🕐 Bắt đầu hẹn giờ xóa ID từ listIDONC sau 10 giây: ${idsToRemoveONC.join(", ")}`);
-        scheduleIDRemoval(idsToRemoveONC, "listIDONC");
+      for (const field of ["listIDON", "listIDONC"]) {
+        const raw = data[field] || "";
+        const ids = raw.split(",").map((x) => x.trim()).filter(Boolean);
+        ids.forEach((id) => {
+          if (id !== "0") {
+            scheduleRemove(id, field, data);
+          }
+        });
       }
 
     } catch (error) {
@@ -136,6 +106,10 @@ async function refWatcher() {
 
 app.get("/", (req, res) => {
   res.send("✅ Firebase Watcher is running...");
+});
+
+app.get("/healthz", (req, res) => {
+  res.status(200).send("OK");
 });
 
 app.listen(port, () => {
