@@ -14,14 +14,15 @@ admin.initializeApp({
 
 const db = admin.database();
 
-const MAIN_NODE = "StartConGa";
+// 🔁 Danh sách các MAIN_NODE cần theo dõi
+const MAIN_NODES = ["StartConGa", "StartConGa"];
 const ENCKEY_NODE = "ENCKEY";
-const SET_CONTENT_PATH = `${MAIN_NODE}/SetRuContent`;
 
 function log(msg) {
   console.log(`[${new Date().toISOString()}] ${msg}`);
 }
 
+// ✅ Giải mã AES (192-bit, CBC) giống Unity/C#
 function decryptAES_NodeCrypto(encryptedBase64, keyBase64Str, ivBase64Str) {
   const key = Buffer.from(keyBase64Str, "utf8");
   const iv = Buffer.from(ivBase64Str, "utf8");
@@ -33,25 +34,30 @@ function decryptAES_NodeCrypto(encryptedBase64, keyBase64Str, ivBase64Str) {
   return decrypted;
 }
 
-function encryptAES_NodeCrypto(plaintext, keyBase64Str, ivBase64Str) {
+// ✅ Mã hóa AES (để ghi đè lại Firebase sau khi xóa)
+function encryptAES_NodeCrypto(plainText, keyBase64Str, ivBase64Str) {
   const key = Buffer.from(keyBase64Str, "utf8");
   const iv = Buffer.from(ivBase64Str, "utf8");
 
   const cipher = crypto.createCipheriv("aes-192-cbc", key, iv);
-  let encrypted = cipher.update(plaintext, "utf8", "base64");
+  let encrypted = cipher.update(plainText, "utf8", "base64");
   encrypted += cipher.final("base64");
   return encrypted;
 }
 
+// ✅ Tách chuỗi ID → mảng số
 function parseIDList(str) {
+  if (!str || str === "0") return [];
   return str
     .split(",")
     .map((id) => id.trim())
-    .filter((id) => id.length > 0);
+    .filter((id) => id !== "")
+    .map((id) => parseInt(id));
 }
 
-function scheduleIDRemoval(ids, field) {
-  const path = `${MAIN_NODE}/SetRuContent`;
+// ✅ Lập lịch xóa ID sau 10 giây
+function scheduleIDRemoval(ids, field, mainNode) {
+  const path = `${mainNode}/SetRuContent`;
 
   ids.forEach((id) => {
     setTimeout(async () => {
@@ -62,18 +68,19 @@ function scheduleIDRemoval(ids, field) {
 
         const encSnap = await db.ref(ENCKEY_NODE).once("value");
         const encData = encSnap.val();
-
         const decryptedStr = decryptAES_NodeCrypto(
           encryptedContent,
           encData.key,
           encData.iv
         );
-        const data = JSON.parse(decryptedStr);
 
+        const data = JSON.parse(decryptedStr);
         const currentIDs = parseIDList(data[field]);
+
         if (currentIDs.includes(id)) {
           const updatedIDsArray = currentIDs.filter((x) => x !== id);
-          data[field] = updatedIDsArray.length > 0 ? updatedIDsArray.join(",") : "0";
+          data[field] =
+            updatedIDsArray.length > 0 ? updatedIDsArray.join(",") : "0";
 
           const newEncrypted = encryptAES_NodeCrypto(
             JSON.stringify(data),
@@ -82,74 +89,61 @@ function scheduleIDRemoval(ids, field) {
           );
 
           await db.ref(path).set(newEncrypted);
-          log(`🗑️ Đã xóa ID '${id}' khỏi ${field}`);
-          log("📤 JSON sau khi xóa ID:");
-          console.dir(data, { depth: null }); // Hiển thị toàn bộ JSON sau cập nhật
+          log(`🗑️ [${mainNode}] Đã xóa ID '${id}' khỏi ${field}`);
+          log(`📤 [${mainNode}] JSON sau khi xóa ID:`);
+          console.dir(data, { depth: null });
         }
       } catch (err) {
-        log(`❌ Lỗi khi xóa ID '${id}' khỏi ${field}: ${err.message}`);
+        log(`❌ [${mainNode}] Lỗi khi xóa ID '${id}' khỏi ${field}: ${err.message}`);
       }
-    }, 60 * 1000); // ⏱️ 10 giây thử nghiệm
+    }, 10 * 60 * 1000); // 10 giây thử nghiệm
   });
 }
 
-
-let previousListIDON = "";
-let previousListIDONC = "";
-
+// ✅ Theo dõi thay đổi từ Firebase
 async function refWatcher() {
-  const ref = db.ref(SET_CONTENT_PATH);
-  ref.on("value", async (snapshot) => {
-    const encryptedContent = snapshot.val();
-    if (!encryptedContent || typeof encryptedContent !== "string") {
-      log("❌ Không tìm thấy encrypted content.");
-      return;
-    }
-
-    try {
-      const encSnap = await db.ref(ENCKEY_NODE).once("value");
-      const encData = encSnap.val();
-
-      const decryptedStr = decryptAES_NodeCrypto(
-        encryptedContent,
-        encData.key,
-        encData.iv
-      );
-
-      const data = JSON.parse(decryptedStr);
-
-      log("✅ Đã giải mã thành công.");
-      log(JSON.stringify(data, null, 2));
-
-      // Theo dõi listIDON
-      if (data.listIDON !== previousListIDON) {
-        const newIDs = parseIDList(data.listIDON);
-        const oldIDs = parseIDList(previousListIDON);
-        const addedIDs = newIDs.filter((id) => !oldIDs.includes(id));
-        if (addedIDs.length > 0) {
-          log(`🔔 listIDON có ID mới: ${addedIDs.join(", ")}`);
-          scheduleIDRemoval(addedIDs, "listIDON");
-        }
-        previousListIDON = data.listIDON;
+  for (const mainNode of MAIN_NODES) {
+    const ref = db.ref(`${mainNode}/SetRuContent`);
+    ref.on("value", async (snapshot) => {
+      const encryptedContent = snapshot.val();
+      if (!encryptedContent || typeof encryptedContent !== "string") {
+        log(`❌ [${mainNode}] Không tìm thấy encrypted content.`);
+        return;
       }
 
-      // Theo dõi listIDONC
-      if (data.listIDONC !== previousListIDONC) {
-        const newIDs = parseIDList(data.listIDONC);
-        const oldIDs = parseIDList(previousListIDONC);
-        const addedIDs = newIDs.filter((id) => !oldIDs.includes(id));
-        if (addedIDs.length > 0) {
-          log(`🔔 listIDONC có ID mới: ${addedIDs.join(", ")}`);
-          scheduleIDRemoval(addedIDs, "listIDONC");
+      try {
+        const encSnap = await db.ref(ENCKEY_NODE).once("value");
+        const encData = encSnap.val();
+        if (!encData || !encData.key || !encData.iv) {
+          log(`❌ [${mainNode}] Thiếu key hoặc iv trong ENCKEY node.`);
+          return;
         }
-        previousListIDONC = data.listIDONC;
+
+        const decryptedStr = decryptAES_NodeCrypto(
+          encryptedContent,
+          encData.key,
+          encData.iv
+        );
+        const data = JSON.parse(decryptedStr);
+
+        log(`✅ [${mainNode}] Đã giải mã thành công.`);
+        console.dir(data, { depth: null });
+
+        if (data.listIDON || data.listIDONC) {
+          const idsOn = parseIDList(data.listIDON);
+          const idsOnC = parseIDList(data.listIDONC);
+
+          if (idsOn.length > 0) scheduleIDRemoval(idsOn, "listIDON", mainNode);
+          if (idsOnC.length > 0) scheduleIDRemoval(idsOnC, "listIDONC", mainNode);
+        }
+      } catch (error) {
+        log(`❌ [${mainNode}] Giải mã thất bại: ${error.message}`);
       }
-    } catch (error) {
-      log(`❌ Giải mã thất bại: ${error.message}`);
-    }
-  });
+    });
+  }
 }
 
+// ✅ Khởi động Express
 app.get("/", (req, res) => {
   res.send("✅ Firebase Watcher is running...");
 });
