@@ -58,7 +58,7 @@ async function refWatcher() {
       const data = JSON.parse(decryptedStr);
 
       log("✅ Đã giải mã thành công.");
-      log(data);
+      log(JSON.stringify(data, null, 2));
 
       if (data.DeleteExpiredUDID === true) {
         log("⚠️ Bật chức năng xóa UDID hết hạn...");
