@@ -83,13 +83,16 @@ function scheduleIDRemoval(ids, field) {
 
           await db.ref(path).set(newEncrypted);
           log(`🗑️ Đã xóa ID '${id}' khỏi ${field}`);
+          log("📤 JSON sau khi xóa ID:");
+          console.dir(data, { depth: null }); // Hiển thị toàn bộ JSON sau cập nhật
         }
       } catch (err) {
         log(`❌ Lỗi khi xóa ID '${id}' khỏi ${field}: ${err.message}`);
       }
-    }, 60 * 1000); // ⏱️ 10 giây (hoặc 60 * 60 * 1000 nếu cần)
+    }, 60 * 1000); // ⏱️ 10 giây thử nghiệm
   });
 }
+
 
 let previousListIDON = "";
 let previousListIDONC = "";
