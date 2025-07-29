@@ -45,6 +45,9 @@ async function refWatcher() {
       return;
     }
 
+    // 👉 In nội dung đã mã hóa (base64)
+    log(`🔐 Encrypted (base64): ${encryptedContent}`);
+
     try {
       const encSnap = await db.ref(ENCKEY_NODE).once("value");
       const encData = encSnap.val();
@@ -54,11 +57,18 @@ async function refWatcher() {
         return;
       }
 
-      const decryptedStr = decryptAES_NodeCrypto(encryptedContent, encData.key, encData.iv);
-      const data = JSON.parse(decryptedStr);
+      // 👉 In key và IV (dạng chuỗi)
+      log(`🗝️  Key (utf8 string): ${encData.key}`);
+      log(`🧂 IV (utf8 string): ${encData.iv}`);
 
+      // 👉 Thực hiện giải mã
+      const decryptedStr = decryptAES_NodeCrypto(encryptedContent, encData.key, encData.iv);
+
+      // 👉 In kết quả rõ ràng
       log("✅ Đã giải mã thành công.");
-      log(JSON.stringify(data, null, 2));
+      log(JSON.stringify(JSON.parse(decryptedStr), null, 2));
+
+      const data = JSON.parse(decryptedStr);
 
       if (data.DeleteExpiredUDID === true) {
         log("⚠️ Bật chức năng xóa UDID hết hạn...");
