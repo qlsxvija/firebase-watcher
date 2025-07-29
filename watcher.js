@@ -72,8 +72,8 @@ function scheduleIDRemoval(ids, field) {
 
         const currentIDs = parseIDList(data[field]);
         if (currentIDs.includes(id)) {
-          const updatedIDs = currentIDs.filter((x) => x !== id).join(",");
-          data[field] = updatedIDs;
+          const updatedIDsArray = currentIDs.filter((x) => x !== id);
+          data[field] = updatedIDsArray.length > 0 ? updatedIDsArray.join(",") : "0";
 
           const newEncrypted = encryptAES_NodeCrypto(
             JSON.stringify(data),
@@ -87,7 +87,7 @@ function scheduleIDRemoval(ids, field) {
       } catch (err) {
         log(`❌ Lỗi khi xóa ID '${id}' khỏi ${field}: ${err.message}`);
       }
-    }, 10 * 1000); // ⏱️ 10 giây (dùng 60 * 60 * 1000 cho 1 giờ)
+    }, 60 * 1000); // ⏱️ 10 giây (hoặc 60 * 60 * 1000 nếu cần)
   });
 }
 
