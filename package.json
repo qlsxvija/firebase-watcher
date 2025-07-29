@@ -1,14 +1,15 @@
 {
   "name": "firebase-watcher",
   "version": "1.0.0",
-  "description": "Firebase UDID auto-cleaner",
   "main": "watcher.js",
   "scripts": {
     "start": "node watcher.js"
   },
   "dependencies": {
     "express": "^4.18.2",
-    "crypto-js": "^4.2.0",
     "firebase-admin": "^11.10.1"
+  },
+  "engines": {
+    "node": ">=16"
   }
 }
