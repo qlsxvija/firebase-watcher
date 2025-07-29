@@ -22,15 +22,17 @@ function log(msg) {
   console.log(`[${new Date().toISOString()}] ${msg}`);
 }
 
-function decryptAES_DevglanStyle(encryptedBase64, keyBase64, ivBase64) {
-  const key = CryptoJS.enc.Base64.parse(keyBase64);
-  const iv = CryptoJS.enc.Base64.parse(ivBase64);
-  const decrypted = CryptoJS.AES.decrypt(encryptedBase64, key, {
-    iv: iv,
-    mode: CryptoJS.mode.CBC,
-    padding: CryptoJS.pad.Pkcs7, // giống PKCS5
-  });
-  return decrypted.toString(CryptoJS.enc.Utf8);
+function decryptAES_NodeCrypto(encryptedBase64, keyBase64Str, ivBase64Str) {
+  // KHÔNG GIẢI MÃ base64 → mà giống C# → convert UTF8 bytes của chuỗi base64
+  const key = Buffer.from(keyBase64Str, "utf8"); // giống Encoding.UTF8.GetBytes(base64 string)
+  const iv = Buffer.from(ivBase64Str, "utf8");
+
+  const ciphertext = Buffer.from(encryptedBase64, "base64");
+
+  const decipher = crypto.createDecipheriv("aes-192-cbc", key, iv);
+  let decrypted = decipher.update(ciphertext, undefined, "utf8");
+  decrypted += decipher.final("utf8");
+  return decrypted;
 }
 
 async function refWatcher() {
@@ -51,7 +53,7 @@ async function refWatcher() {
         return;
       }
 
-      const decryptedStr = decryptAES_DevglanStyle(encryptedContent, encData.key, encData.iv);
+      const decryptedStr = decryptAES_NodeCrypto(encryptedContent, encData.key, encData.iv);
       const data = JSON.parse(decryptedStr);
 
       log("✅ Đã giải mã thành công giống Devglan.");
