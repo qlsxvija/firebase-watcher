@@ -1,6 +1,6 @@
 const admin = require("firebase-admin");
-const crypto = require("crypto");
 const express = require("express");
+const CryptoJS = require("crypto-js");
 
 const app = express();
 const port = 10000;
@@ -22,24 +22,15 @@ function log(msg) {
   console.log(`[${new Date().toISOString()}] ${msg}`);
 }
 
-// 👉 Chuẩn hóa IV: nếu thiếu thì pad \x00, nếu thừa thì cắt
-function normalizeIV(ivBuffer) {
-  if (ivBuffer.length < 16) {
-    const pad = Buffer.alloc(16 - ivBuffer.length, 0); // pad bằng null bytes
-    return Buffer.concat([ivBuffer, pad]);
-  } else if (ivBuffer.length > 16) {
-    return ivBuffer.slice(0, 16);
-  }
-  return ivBuffer;
-}
-
-// ✅ Giải mã AES-192-CBC
-function decryptAES(encryptedBase64, keyBuffer, ivBuffer) {
-  const encrypted = Buffer.from(encryptedBase64, "base64");
-  const decipher = crypto.createDecipheriv("aes-192-cbc", keyBuffer, ivBuffer);
-  let decrypted = decipher.update(encrypted);
-  decrypted = Buffer.concat([decrypted, decipher.final()]);
-  return decrypted.toString("utf8");
+function decryptAES_DevglanStyle(encryptedBase64, keyBase64, ivBase64) {
+  const key = CryptoJS.enc.Base64.parse(keyBase64);
+  const iv = CryptoJS.enc.Base64.parse(ivBase64);
+  const decrypted = CryptoJS.AES.decrypt(encryptedBase64, key, {
+    iv: iv,
+    mode: CryptoJS.mode.CBC,
+    padding: CryptoJS.pad.Pkcs7, // giống PKCS5
+  });
+  return decrypted.toString(CryptoJS.enc.Utf8);
 }
 
 async function refWatcher() {
@@ -60,28 +51,14 @@ async function refWatcher() {
         return;
       }
 
-      const keyBuffer = Buffer.from(encData.key, "base64"); // 24 bytes cho AES-192
-      const ivRaw = Buffer.from(encData.iv, "base64");      // có thể không đủ 16 bytes
-      const ivBuffer = normalizeIV(ivRaw);
-
-      log("✅ AES key và IV đã load.");
-      log(`Key (${keyBuffer.length} bytes): ${keyBuffer.toString("hex")}`);
-      log(`IV  (${ivBuffer.length} bytes): ${ivBuffer.toString("hex")}`);
-
-      if (keyBuffer.length !== 24) {
-        log("❌ Key không đúng độ dài 24 bytes cho AES-192.");
-        return;
-      }
-
-      const decryptedStr = decryptAES(encryptedContent, keyBuffer, ivBuffer);
+      const decryptedStr = decryptAES_DevglanStyle(encryptedContent, encData.key, encData.iv);
       const data = JSON.parse(decryptedStr);
 
-      log("✅ Đã giải mã thành công StartConGa/SetRuContent.");
+      log("✅ Đã giải mã thành công giống Devglan.");
       log(data);
 
       if (data.DeleteExpiredUDID === true) {
         log("⚠️ Bật chức năng xóa UDID hết hạn...");
-        // Xử lý tại đây nếu cần
       } else {
         log("ℹ️ Chức năng xóa UDID đang tắt.");
       }
