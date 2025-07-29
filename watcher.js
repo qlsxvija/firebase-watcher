@@ -1,6 +1,6 @@
 const admin = require("firebase-admin");
 const express = require("express");
-const CryptoJS = require("crypto-js");
+const CryptoJS = require("crypto");
 
 const app = express();
 const port = 10000;
