@@ -14,15 +14,14 @@ admin.initializeApp({
 
 const db = admin.database();
 
-// 🔁 Danh sách các MAIN_NODE cần theo dõi
-const MAIN_NODES = ["StartConGa", "StartConGa"];
+const MAIN_NODE = "StartConGa";
 const ENCKEY_NODE = "ENCKEY";
+const SET_CONTENT_PATH = `${MAIN_NODE}/SetRuContent`;
 
 function log(msg) {
   console.log(`[${new Date().toISOString()}] ${msg}`);
 }
 
-// ✅ Giải mã AES (192-bit, CBC) giống Unity/C#
 function decryptAES_NodeCrypto(encryptedBase64, keyBase64Str, ivBase64Str) {
   const key = Buffer.from(keyBase64Str, "utf8");
   const iv = Buffer.from(ivBase64Str, "utf8");
@@ -34,7 +33,6 @@ function decryptAES_NodeCrypto(encryptedBase64, keyBase64Str, ivBase64Str) {
   return decrypted;
 }
 
-// ✅ Mã hóa AES (để ghi đè lại Firebase sau khi xóa)
 function encryptAES_NodeCrypto(plainText, keyBase64Str, ivBase64Str) {
   const key = Buffer.from(keyBase64Str, "utf8");
   const iv = Buffer.from(ivBase64Str, "utf8");
@@ -45,19 +43,13 @@ function encryptAES_NodeCrypto(plainText, keyBase64Str, ivBase64Str) {
   return encrypted;
 }
 
-// ✅ Tách chuỗi ID → mảng số
-function parseIDList(str) {
-  if (!str || str === "0") return [];
-  return str
-    .split(",")
-    .map((id) => id.trim())
-    .filter((id) => id !== "")
-    .map((id) => parseInt(id));
+function parseIDList(idListStr) {
+  if (!idListStr || idListStr === "0") return [];
+  return idListStr.split(",").map((id) => id.trim()).filter((id) => id);
 }
 
-// ✅ Lập lịch xóa ID sau 10 giây
-function scheduleIDRemoval(ids, field, mainNode) {
-  const path = `${mainNode}/SetRuContent`;
+function scheduleIDRemoval(ids, field) {
+  const path = `${MAIN_NODE}/SetRuContent`;
 
   ids.forEach((id) => {
     setTimeout(async () => {
@@ -68,19 +60,18 @@ function scheduleIDRemoval(ids, field, mainNode) {
 
         const encSnap = await db.ref(ENCKEY_NODE).once("value");
         const encData = encSnap.val();
+
         const decryptedStr = decryptAES_NodeCrypto(
           encryptedContent,
           encData.key,
           encData.iv
         );
-
         const data = JSON.parse(decryptedStr);
-        const currentIDs = parseIDList(data[field]);
 
+        const currentIDs = parseIDList(data[field]);
         if (currentIDs.includes(id)) {
           const updatedIDsArray = currentIDs.filter((x) => x !== id);
-          data[field] =
-            updatedIDsArray.length > 0 ? updatedIDsArray.join(",") : "0";
+          data[field] = updatedIDsArray.length > 0 ? updatedIDsArray.join(",") : "0";
 
           const newEncrypted = encryptAES_NodeCrypto(
             JSON.stringify(data),
@@ -89,61 +80,60 @@ function scheduleIDRemoval(ids, field, mainNode) {
           );
 
           await db.ref(path).set(newEncrypted);
-          log(`🗑️ [${mainNode}] Đã xóa ID '${id}' khỏi ${field}`);
-          log(`📤 [${mainNode}] JSON sau khi xóa ID:`);
-          console.dir(data, { depth: null });
+          log(`🗑️ Đã xóa ID '${id}' khỏi ${field}`);
+          log("📤 JSON sau khi xóa ID:");
+          console.dir(data, { depth: null }); // Hiển thị toàn bộ JSON sau cập nhật
         }
       } catch (err) {
-        log(`❌ [${mainNode}] Lỗi khi xóa ID '${id}' khỏi ${field}: ${err.message}`);
+        log(`❌ Lỗi khi xóa ID '${id}' khỏi ${field}: ${err.message}`);
       }
-    }, 10 * 60 * 1000); // 10 giây thử nghiệm
+    }, 50 * 60 * 1000); // ⏱️ 10 giây thử nghiệm
   });
 }
 
-// ✅ Theo dõi thay đổi từ Firebase
 async function refWatcher() {
-  for (const mainNode of MAIN_NODES) {
-    const ref = db.ref(`${mainNode}/SetRuContent`);
-    ref.on("value", async (snapshot) => {
-      const encryptedContent = snapshot.val();
-      if (!encryptedContent || typeof encryptedContent !== "string") {
-        log(`❌ [${mainNode}] Không tìm thấy encrypted content.`);
+  const ref = db.ref(SET_CONTENT_PATH);
+  ref.on("value", async (snapshot) => {
+    const encryptedContent = snapshot.val();
+    if (!encryptedContent || typeof encryptedContent !== "string") {
+      log("❌ Không tìm thấy encrypted content.");
+      return;
+    }
+
+    try {
+      const encSnap = await db.ref(ENCKEY_NODE).once("value");
+      const encData = encSnap.val();
+
+      if (!encData || !encData.key || !encData.iv) {
+        log("❌ Thiếu key hoặc iv trong ENCKEY node.");
         return;
       }
 
-      try {
-        const encSnap = await db.ref(ENCKEY_NODE).once("value");
-        const encData = encSnap.val();
-        if (!encData || !encData.key || !encData.iv) {
-          log(`❌ [${mainNode}] Thiếu key hoặc iv trong ENCKEY node.`);
-          return;
-        }
+      const decryptedStr = decryptAES_NodeCrypto(encryptedContent, encData.key, encData.iv);
+      const data = JSON.parse(decryptedStr);
 
-        const decryptedStr = decryptAES_NodeCrypto(
-          encryptedContent,
-          encData.key,
-          encData.iv
-        );
-        const data = JSON.parse(decryptedStr);
+      log("✅ Đã giải mã thành công.");
+      console.dir(data, { depth: null });
 
-        log(`✅ [${mainNode}] Đã giải mã thành công.`);
-        console.dir(data, { depth: null });
+      const idsToRemoveON = parseIDList(data.listIDON);
+      const idsToRemoveONC = parseIDList(data.listIDONC);
 
-        if (data.listIDON || data.listIDONC) {
-          const idsOn = parseIDList(data.listIDON);
-          const idsOnC = parseIDList(data.listIDONC);
-
-          if (idsOn.length > 0) scheduleIDRemoval(idsOn, "listIDON", mainNode);
-          if (idsOnC.length > 0) scheduleIDRemoval(idsOnC, "listIDONC", mainNode);
-        }
-      } catch (error) {
-        log(`❌ [${mainNode}] Giải mã thất bại: ${error.message}`);
+      if (idsToRemoveON.length > 0) {
+        log(`🕐 Bắt đầu hẹn giờ xóa ID từ listIDON sau 10 giây: ${idsToRemoveON.join(", ")}`);
+        scheduleIDRemoval(idsToRemoveON, "listIDON");
       }
-    });
-  }
+
+      if (idsToRemoveONC.length > 0) {
+        log(`🕐 Bắt đầu hẹn giờ xóa ID từ listIDONC sau 10 giây: ${idsToRemoveONC.join(", ")}`);
+        scheduleIDRemoval(idsToRemoveONC, "listIDONC");
+      }
+
+    } catch (error) {
+      log(`❌ Giải mã thất bại: ${error.message}`);
+    }
+  });
 }
 
-// ✅ Khởi động Express
 app.get("/", (req, res) => {
   res.send("✅ Firebase Watcher is running...");
 });
