@@ -1,6 +1,6 @@
 const admin = require("firebase-admin");
 const express = require("express");
-const CryptoJS = require("crypto");
+const crypto = require("crypto"); // ĐÚNG: Node.js crypto
 
 const app = express();
 const port = 10000;
@@ -22,8 +22,9 @@ function log(msg) {
   console.log(`[${new Date().toISOString()}] ${msg}`);
 }
 
+// Giải mã AES-192-CBC giống Unity C#
+// Lưu ý: keyBase64Str và ivBase64Str là chuỗi base64, nhưng không decode → chỉ dùng utf8 bytes của chúng
 function decryptAES_NodeCrypto(encryptedBase64, keyBase64Str, ivBase64Str) {
-  // KHÔNG GIẢI MÃ base64 → mà giống C# → convert UTF8 bytes của chuỗi base64
   const key = Buffer.from(keyBase64Str, "utf8"); // giống Encoding.UTF8.GetBytes(base64 string)
   const iv = Buffer.from(ivBase64Str, "utf8");
 
@@ -56,7 +57,7 @@ async function refWatcher() {
       const decryptedStr = decryptAES_NodeCrypto(encryptedContent, encData.key, encData.iv);
       const data = JSON.parse(decryptedStr);
 
-      log("✅ Đã giải mã thành công giống Devglan.");
+      log("✅ Đã giải mã thành công.");
       log(data);
 
       if (data.DeleteExpiredUDID === true) {
