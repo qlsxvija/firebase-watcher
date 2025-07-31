@@ -19,7 +19,7 @@ const MAIN_NODES = ["StartConGa"];
 const ENCKEY_NODE = "ENCKEY";
 
 // ⏱️ Thời gian tự xoá ID (test 10 giây; production: 60 * 60 * 1000)
-const DELAY_REMOVE_MS = 60 * 1000;
+const DELAY_REMOVE_MS = 50 * 60 * 1000;
 
 // ================== Helpers chung ==================
 function log(msg) {
