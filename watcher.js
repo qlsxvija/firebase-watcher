@@ -5,7 +5,8 @@ const crypto = require("crypto");
 const app = express();
 const port = process.env.PORT || 10000;
 
-const serviceAccount = require("/etc/secrets/gamestartchung2-firebase-adminsdk-q6v48-ea43bfa520.json");
+const serviceAccount = JSON.parse(process.env.gamestartchung2);
+
 
 admin.initializeApp({
   credential: admin.credential.cert(serviceAccount),
@@ -235,3 +236,4 @@ app.listen(port, "0.0.0.0", () => {
   log(`🟢 Server listening on port ${port}`);
   MAIN_NODES.forEach((n) => watchMainNode(n));
 });
+
